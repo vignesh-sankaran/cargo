@@ -24,6 +24,7 @@ extern crate jobserver;
 extern crate libc;
 extern crate libgit2_sys;
 extern crate num_cpus;
+extern crate regex;
 extern crate same_file;
 extern crate semver;
 extern crate serde;
@@ -34,6 +35,7 @@ extern crate tempdir;
 extern crate termcolor;
 extern crate toml;
 extern crate url;
+extern crate walkdir;
 #[cfg(target_os = "macos")]
 extern crate core_foundation;
 
