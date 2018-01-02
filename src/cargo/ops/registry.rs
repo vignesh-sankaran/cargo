@@ -1,6 +1,7 @@
 use std::{cmp, env};
 use std::fs::{self, File};
 use std::iter::repeat;
+use std::path::Path;
 use std::time::Duration;
 
 use curl::easy::{Easy, SslOpt};
@@ -61,6 +62,7 @@ pub fn publish(ws: &Workspace, opts: &PublishOpts) -> CargoResult<()> {
                                           opts.index.clone(),
                                           opts.registry.clone())?;
     verify_dependencies(pkg, &reg_id)?;
+    check_documentation(&mut registry, pkg.name(), &ws.current_manifest())?;
 
     // Prepare a tarball, with a non-surpressable warning if metadata
     // is missing since this is being put online.
@@ -110,6 +112,66 @@ fn verify_dependencies(pkg: &Package, registry_src: &SourceId)
             }
         }
     }
+    Ok(())
+}
+
+/// Print out warnings related to documentation if the crate is being published
+/// for the first time. Checks currently undertaken are:
+/// - Non-empty top level documentation comments
+fn check_documentation(registry: &mut Registry, package_name: &str, manifest_path: &Path) -> CargoResult<()> {
+    use std::io::Read;
+    use regex::Regex;
+    use walkdir::WalkDir;
+    use walkdir::DirEntry;
+
+    trait RustFile {
+        fn is_rust_file(&self) -> bool;
+    }
+
+    impl RustFile for DirEntry{
+        fn is_rust_file(&self) -> bool {
+            match self.path().extension() {
+                Some(ext) => {
+                    ext == "rs"
+                },
+                None => false
+            }
+        }
+    }
+
+    let (crates, _) = registry.search(package_name, 1).chain_err(|| {
+        "Failed to publish due to error checking if crate has been published prior"
+    })?;
+
+    if let Some(krate) = crates.first() {
+        if krate.name == package_name {
+            return Ok(());
+        }
+    }
+
+    // Search workspace for all Rust files and check if a non-empty
+    // documentation is contained.
+    let re = Regex::new(r"//[/!]")?;
+
+    for result in WalkDir::new(manifest_path){
+        let entry = result?;
+        if !entry.file_type().is_file() || !entry.is_rust_file() {
+            continue;
+        }
+        let mut file = File::open(entry.path())?;
+        let mut contents = String::new();
+        if file.read_to_string(&mut contents).is_ok() {
+            for line in contents.lines() {
+                if re.is_match(&line) {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    config.shell().warn("no top-level documentation comments were detected in your crate.\
+                        Please consider adding some");
+
     Ok(())
 }
 
